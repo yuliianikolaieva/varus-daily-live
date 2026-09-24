@@ -110,6 +110,9 @@ function render() {
   });
   el('warnings').replaceChildren();
   const warnings=[];
+  const localParts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
+  const expectedDate=shift(`${localParts.year}-${localParts.month}-${localParts.day}`,-1);
+  if(Number(localParts.hour)>=9 && D.through<expectedDate) warnings.push(`Оновлення затримується: очікуються дані за ${expectedDate}, зараз доступні за ${D.through}.`);
   if (Date.now()-new Date(D.updated_at)>30*3600000) warnings.push('Дані не оновлювалися понад 30 годин.');
   if (current.known_rows < current.row_count) warnings.push(`Час онлайн доступний для ${current.known_rows} з ${current.row_count} точко-днів. Відсутні дані не замінені нулями.`);
   if (!current.working_time) warnings.push('Availability недоступна: робочий час у вибраному періоді відсутній або дорівнює нулю.');
