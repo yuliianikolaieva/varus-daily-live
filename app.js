@@ -77,6 +77,7 @@ function performanceTable(target, currentRows, previousRows, key) {
   for (const [id, rows] of [...grouped(currentRows, key)].sort((a,b) => aggregate(b[1]).gmv - aggregate(a[1]).gmv)) {
     const current = aggregate(rows), before = aggregate(previous.get(id) || []), tr = document.createElement('tr');
     cell(tr, key === 'city' ? id : rows[0].store_name + ' · ' + id);
+    if (key === 'store_id') cell(tr, rows[0].city || 'Місто не вказане');
     if (key === 'city') cell(tr, current.count, before.row_count ? 'Δ ' + fmt(current.count - before.count) + ' точок' : 'Немає бази');
     for (const metric of metrics) {
       let comparison = delta(current, before, metric);
@@ -118,7 +119,7 @@ function render() {
   if (!current.working_time) warnings.push('Availability недоступна: робочий час у вибраному періоді відсутній або дорівнює нулю.');
   for (const message of warnings) { const div=document.createElement('div'); div.className='warning'; div.textContent=message; el('warnings').append(div); }
   const names=['GMV, €','Orders','Availability','Online hours, год','Bad · %','Failed · %'];
-  headers(el('head'),['Точка',...names]);
+  headers(el('head'),['Точка','Місто',...names]);
   performanceTable(el('rows'),rows,previousRows,'store_id');
   headers(el('city-head'),['Місто','К-сть точок',...names]);
   const cityRows=filtered(true);
