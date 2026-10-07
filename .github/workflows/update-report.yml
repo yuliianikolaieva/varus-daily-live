@@ -1,0 +1,41 @@
+name: Update VARUS daily report
+
+on:
+  schedule:
+    # GitHub Actions cron is UTC. The next step keeps only the 09:00 Kyiv run,
+    # so daylight-saving changes do not shift the local update time.
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check Kyiv time
+        id: kyiv-time
+        run: echo "run=$(test "$GITHUB_EVENT_NAME" = workflow_dispatch -o "$(TZ=Europe/Kyiv date +%H)" = "09" && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.kyiv-time.outputs.run == 'true'
+        run: pip install -r requirements.txt
+      - name: Fetch Databricks data
+        if: steps.kyiv-time.outputs.run == 'true'
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_WAREHOUSE_ID: ${{ secrets.DATABRICKS_WAREHOUSE_ID }}
+          DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+        run: python generate_report.py
+      - name: Commit refreshed report
+        if: steps.kyiv-time.outputs.run == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.json daily.csv weekly.csv cities.csv
+          git diff --cached --quiet || git commit -m "Refresh daily VARUS report"
+          git push

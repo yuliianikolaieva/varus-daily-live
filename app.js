@@ -5,6 +5,12 @@ const date = value => value.slice(0, 10);
 const utc = value => new Date(value + 'T00:00:00Z');
 const shift = (value, days) => new Date(+utc(value) + days * 86400000).toISOString().slice(0, 10);
 const monday = value => shift(value, -((utc(value).getUTCDay() + 6) % 7));
+const monthStart = value => value.slice(0, 7) + '-01';
+const monthEnd = value => {
+  const [year, month] = monthStart(value).split('-').map(Number);
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+};
+const monthLabel = value => new Intl.DateTimeFormat('uk-UA', {month: 'long', year: 'numeric', timeZone: 'UTC'}).format(utc(monthStart(value)));
 const fmt = (v, digits = 0) => v == null || !Number.isFinite(+v) ? '—' : new Intl.NumberFormat('uk-UA', {maximumFractionDigits: digits}).format(v);
 const pct = v => v == null ? 'Немає даних' : fmt(v, 1) + '%';
 const change = (a, b) => a != null && b > 0 ? (a / b - 1) * 100 : null;
@@ -35,6 +41,12 @@ function filtered(ignoreStore = false) {
 }
 function period() {
   const selected = el('date').value || D.through;
+  if (mode === 'month') {
+    const start = monthStart(selected);
+    const end = [monthEnd(selected), D.through].sort()[0];
+    const previousStart = monthStart(shift(start, -1));
+    return {start, end, previousStart, previousEnd: shift(previousStart, Math.round((utc(end) - utc(start)) / 86400000))};
+  }
   const start = mode === 'week' ? monday(selected) : selected;
   const end = mode === 'week' ? [shift(start, 6), D.through].sort()[0] : selected;
   return {start, end, previousStart: shift(start, -7), previousEnd: shift(end, -7)};
@@ -93,8 +105,10 @@ function render() {
   const all = filtered(), rows = range(all,start,end), previousRows = range(all,previousStart,previousEnd);
   const current = aggregate(rows), before = aggregate(previousRows);
   const description = `${start}${start === end ? '' : ' — ' + end} ↔ ${previousStart}${previousStart === previousEnd ? '' : ' — ' + previousEnd}`;
-  el('period').textContent = (mode === 'day' ? 'День · ' : 'Тиждень · ') + start + (start === end ? '' : ' — ' + end);
-  el('comparison').textContent = (mode === 'day' ? 'Порівняння з тим самим днем минулого тижня: ' : 'Порівняння з відповідними днями попереднього тижня: ') + description;
+  const periodTitle = mode === 'day' ? 'День · ' : mode === 'week' ? 'Тиждень · ' : 'Місяць · ';
+  const comparisonTitle = mode === 'day' ? 'Порівняння з тим самим днем минулого тижня: ' : mode === 'week' ? 'Порівняння з відповідними днями попереднього тижня: ' : 'Порівняння з відповідними днями попереднього місяця: ';
+  el('period').textContent = periodTitle + (mode === 'month' ? monthLabel(start) : start + (start === end ? '' : ' — ' + end));
+  el('comparison').textContent = comparisonTitle + description;
   el('table-comparison').textContent = 'Зміни: ' + description;
   el('coverage').textContent = current.count + ' точок · EUR · завершені дні';
   el('cards').replaceChildren();
@@ -126,6 +140,7 @@ function render() {
   performanceTable(el('city-rows'),range(cityRows,start,end),range(cityRows,previousStart,previousEnd),'city');
   renderHistory(all,end);
   renderWeeks(all,end);
+  renderMonths(all,end);
   draw(all,end);
 }
 
@@ -145,6 +160,24 @@ function renderWeeks(all,end) {
     const current=aggregate(rows),before=aggregate(range(all,shift(start,-7),shift(stop,-7)));
     const days=Math.round((utc(stop)-utc(start))/86400000)+1;
     simpleRow(el('weeks'),[start,fmt(current.gmv,2),fmt(current.orders),fmt(current.gmv/days*7,2),fmt(current.orders/days*7,1),pct(current.availability_pct),valueFor(current,'online_hours'),delta(current,before,'gmv'),days+'/7']);
+  }
+}
+function renderMonths(all,end) {
+  el('months').replaceChildren();
+  const latest = monthStart(end);
+  const first = monthStart(D.network[0].date);
+  for (let start = latest; start >= first; start = monthStart(shift(start, -1))) {
+    const stop = [monthEnd(start), end].sort()[0];
+    const rows = range(all, start, stop); if (!rows.length) continue;
+    const days = Math.round((utc(stop) - utc(start)) / 86400000) + 1;
+    const previousStart = monthStart(shift(start, -1));
+    const previous = aggregate(range(all, previousStart, shift(previousStart, days - 1)));
+    const current = aggregate(rows);
+    simpleRow(el('months'), [
+      monthLabel(start), fmt(current.gmv, 2), fmt(current.orders), pct(current.availability_pct),
+      valueFor(current, 'online_hours'), valueFor(current, 'bad_orders'), valueFor(current, 'failed_orders'),
+      delta(current, previous, 'gmv'), days + '/' + (Math.round((utc(monthEnd(start)) - utc(start)) / 86400000) + 1)
+    ]);
   }
 }
 function draw(all,end) {
@@ -177,7 +210,7 @@ async function init() {
     stores();el('date').min=date(D.network[0].date);el('date').max=D.through;el('date').value=D.through;
     el('city').onchange=()=>{stores();render();};
     for(const id of ['store','date','metric'])el(id).onchange=render;
-    for(const id of ['day','week'])el(id).onclick=()=>{mode=id;el('day').classList.toggle('active',id==='day');el('week').classList.toggle('active',id==='week');render();};
+    for(const id of ['day','week','month']) el(id).onclick=()=>{mode=id; for(const button of ['day','week','month']) el(button).classList.toggle('active', button===id); render();};
     render();
   }catch(error){el('error').textContent=error.message;el('stamp').textContent='Не вдалося завантажити звіт';}
 }
