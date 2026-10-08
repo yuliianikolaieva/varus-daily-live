@@ -2,9 +2,10 @@ name: Update VARUS daily report
 
 on:
   schedule:
-    # GitHub Actions cron is UTC. The next step keeps only the 09:00 Kyiv run,
-    # so daylight-saving changes do not shift the local update time.
-    - cron: "0 * * * *"
+    # GitHub Actions cron is UTC. Check the 09:00 Kyiv window in both UTC
+    # offsets so the refresh stays on Kyiv time after daylight-saving changes.
+    # Staggering the checks avoids GitHub's frequent delays for :00 schedules.
+    - cron: "7,22,37,52 6,7 * * *"
   workflow_dispatch:
 
 permissions:
@@ -13,6 +14,9 @@ permissions:
 jobs:
   update-report:
     runs-on: ubuntu-latest
+    concurrency:
+      group: varus-daily-refresh
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
