@@ -4,8 +4,8 @@ on:
   schedule:
     # GitHub Actions cron is UTC. Check the 09:00 Kyiv window in both UTC
     # offsets so the refresh stays on Kyiv time after daylight-saving changes.
-    # Staggering the checks avoids GitHub's frequent delays for :00 schedules.
-    - cron: "7,22,37,52 6,7 * * *"
+    # GitHub may drop individual scheduled events, so retry every five minutes.
+    - cron: "*/5 6,7 * * *"
   workflow_dispatch:
 
 permissions:
@@ -24,7 +24,27 @@ jobs:
           python-version: "3.11"
       - name: Check Kyiv time
         id: kyiv-time
-        run: echo "run=$(test "$GITHUB_EVENT_NAME" = workflow_dispatch -o "$(TZ=Europe/Kyiv date +%H)" = "09" && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(TZ=Europe/Kyiv date +%H)" != "09" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif python - <<'PY'
+          import json
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          report = json.load(open("data.json", encoding="utf-8"))
+          refreshed_today = datetime.fromisoformat(report["updated_at"]).astimezone(
+              ZoneInfo("Europe/Kyiv")
+          ).date() == datetime.now(ZoneInfo("Europe/Kyiv")).date()
+          raise SystemExit(0 if refreshed_today else 1)
+          PY
+          then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
       - if: steps.kyiv-time.outputs.run == 'true'
         run: pip install -r requirements.txt
       - name: Fetch Databricks data
